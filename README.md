@@ -14,52 +14,57 @@
 
 ### 开始
 
-1. 安装环境使用 archlinux 的镜像即可，挺好用的。
-
-2. 分区并挂载 `/` `/home` `/boot/efi` `swap` （这一步和安装 archlinux 时一样）
-
-3. 下载 Gentoo 的 stage3 包，并解压到准备的新环境中
-
+1. 同步时间
    ```bash
-   tar xpvf stage3-*.tar.bz2 --xattrs-include='*.*' --numeric-owner
+   ntpd -q -g
    ```
 
-4. 生成 fstab（同 archlinux）
+2. 安装环境使用 archlinux 的镜像即可，挺好用的。
 
-5. 复制 DNS 信息到新环境
+3. 分区并挂载 `/` `/home` `/boot/efi` `swap` （这一步和安装 archlinux 时一样）
+
+4. 下载 Gentoo 的 [stage3](https://mirrors.ustc.edu.cn/gentoo/releases/amd64/autobuilds/) 包，并解压到准备的新环境中
+
+   ```bash
+   tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner
+   ```
+
+5. 生成 fstab（同 archlinux）
+   使用 `git clone https://github.com/qingyu4y/gentoo` 下载 archlinux 的 genfstab 工具
+
+6. 复制 DNS 信息到新环境
 
    ```bash
    # --dereference 选项可以保障如果/etc/resolv.conf是一个符号链接的话，复制的是那个目标文件而不是这个符号文件自己
    cp --dereference /etc/resolv.conf /mnt/gentoo/etc/
    ```
 
-6. 挂载必要的文件系统
+7. 挂载必要的文件系统
 
    ```bash
    mount --types proc /proc /mnt/gentoo/proc
    mount --rbind /sys /mnt/gentoo/sys
    mount --rbind /dev /mnt/gentoo/dev
    mount --bind /run /mnt/gentoo/run
-   # 如果使用 openrc，则不需要挂载下面两个文件系统；如果使用 systemd 则需要
+   # 如果使用 systemd，还需要挂载下面三个文件系统
    mount --make-rslave /mnt/gentoo/sys
    mount --make-rslave /mnt/gentoo/dev
    mount --make-rslave /mnt/gentoo/run
    # 如果使用的不是官方的安装镜像，则还需要执行下面的步骤；因为使用的是 archlinux 的安装镜像，所以下面的步骤是不要的。使用 archlinux 安装镜像时，通常只需要执行第二个挂载命令即可，如果要确保万无一失，可以再执行一下第三个命令。 
    test -L /dev/shm && rm /dev/shm && mkdir /dev/shm
    mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm
-   chmod 1777 /dev/shm
+   chmod 1777 /dev/shm /run/shm
    ```
 
-7. 进入新环境
+8. 进入新环境
 
    ```bash
    chroot /mnt/gentoo /bin/bash
    source /etc/profile
-   # 这一步并不是必要的，因为我们基本上不可能判断不出自己所处的环境是否为 chroot，所以不太需要多设置一个提示符
    export PS1="(chroot) ${PS1}"
    ```
 
-8. 配置 Portage
+9.  配置 Portage
 
    - */etc/portage/make.conf*
 
@@ -68,7 +73,7 @@
      # built this stage.
      # Please consult /usr/share/portage/config/make.conf.example for a more
      # detailed example.
-     COMMON_FLAGS="-march=native -O1 -pipe"
+     COMMON_FLAGS="-march=znver3 -O2 -pipe"
      CFLAGS="${COMMON_FLAGS}"
      CXXFLAGS="${COMMON_FLAGS}"
      FCFLAGS="${COMMON_FLAGS}"
@@ -83,15 +88,23 @@
      # Please keep this setting intact when reporting bugs.
      LC_MESSAGES=C
      
-     NO_DE="-gnome -gnome-shell -kde -plasma"
-     OTHERS="systemd  -grub -ipv6 -bindist"
+     # 使用 cpuid2cpuflags 获取，如果没有，使用 emerge --ask app-portage/cpuid2cpuflags 命令安装
+     CPU_FLAGS_X86=""
+     # EMERGE_DEFAULT_OPTS="--keep-going --with-bdeps=y --autounmask-write=y --jobs=2 -l"
+     EMERGE_DEFAULT_OPTS="--jobs=2"
+     NO_DE="-wayland -gnome -gnome-shell -gnome-online-accounts -gnome-keyring -nautilus -kde -plasma"
+     OTHERS="X systemd pipewire -grub -ipv6 -bindist cjk emoji"
      USE="${NO_DE} ${OTHERS}"
      GENTOO_MIRRORS="https://mirrors.ustc.edu.cn/gentoo/"
      ACCEPT_LICENSE="*"
      MAKEOPTS="-j5"
-     VIDEO_CARDS="radeon"
-     LUA_SINGLE_TARGET="luajit"
-     USE_EXPAND="en_US zh_CN en zh"
+     VIDEO_CARDS="nvidia"
+     GRUB_PLATFORMS="efi-64"
+     ACCEPT_KEYWORDS="amd64"
+     # LUA_SINGLE_TARGET="luajit"
+     # USE_EXPAND="en_US zh_CN en zh"
+     L10N="en-US zh-CN en zh"
+     LINGUAS="en_US zh_CN en zh"
      ```
 
    - */etc/portage/repos.conf*
@@ -109,7 +122,7 @@
      auto-sync = yes
      ```
 
-9. 更新 Portage
+11. 更新 Portage
 
    ```bash
    # 推荐使用第一种方式，虽然它使用快照的方式不能保证软件是最新的，但其实差不了多少。
@@ -118,7 +131,7 @@
    emerge --sync
    ```
 
-10. （可选）选择 profile
+11. （可选）选择 profile
 
     通常当前环境的默认的 profile 与下载的 stage3 的是一致的。比如下载的是 amd64 + systemd + desktop 版本的 stage3 包，那么当前环境的 profile 默认设置的就是 `default/linux/amd64/17.1/desktop/systemd`。所以一般无需更改。
 
@@ -129,7 +142,7 @@
     eselect profile set <number>
     ```
 
-11. （可选）更新系统
+12. （可选）更新系统
 
     如果没有特殊情况并且是下载的最新的 stage3 包，其实不用太急着更新整个系统，因为真的很耗时。
 
@@ -137,7 +150,7 @@
     emerge --ask --verbose --update --deep --newuse @world
     ```
 
-12. 进行一些必要的配置
+13. 进行一些必要的配置
 
     - 时区
 
@@ -159,7 +172,7 @@
       env-update && source /etc/profile && export PS1="(chroot) ${PS1}"
       ```
 
-13. 安装固件程序
+14. 安装固件程序
 
     为一些硬件，特别是无线设备提供了驱动。如果不安装可能导致开机启动失败。
 
@@ -167,7 +180,7 @@
     emerge -av sys-kernel/linux-firmware
     ```
 
-14. 安装内核
+15. 安装内核
 
     为了减少安装时间，使用 gentoo 编译好的内核。
 
@@ -175,7 +188,7 @@
     emerge --ask sys-kernel/gentoo-kernel-bin
     ```
 
-15. 配置网络 iwd
+16. 配置网络 iwd
 
     因为只使用无线网络，所以只要 iwd 就够。
 
@@ -195,7 +208,7 @@
     NameResolvingService=systemd
     ```
 
-    如果不是使用的 OpenRC，则还需要安装 net-dns/openresolv，并且在编译时需要开启 `standalone` flag。如果这里设置错误，很显然将会导致域名不能解析为具体的 ip 地址。
+    如果使用的 OpenRC，则还需要安装 net-dns/openresolv，并且在编译时需要开启 `standalone` flag。如果这里设置错误，很显然将会导致域名不能解析为具体的 ip 地址。
 
     ```bash
     emerge -av net-dns/openresolv
@@ -211,7 +224,21 @@
     NameResolvingService=resolvconf
     ```
 
-16. 安装引导程序 LiLo
+17. 安装引导程序
+
+- 使用 grub
+  ```bash
+  emerge -av sys-boot/grub
+  grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Gentoo
+  vi /etc/default/grub
+  grub-mkconfig -o /boot/grub/grub.cfg
+  ```
+  `/etc/default/grub`
+  ```
+  GRUB_CMDLINE_LINUX="quiet amd_iommu=on iommu=pt loglevel=5"
+  ```
+
+- 使用 LiLo
 
     如果使用的是传统的 MBR，那么可以选择更轻量的 LiLo 引导程序。
 
@@ -284,9 +311,9 @@
     	append="quiet"
     ```
 
-17. 最后的配置
+1.  最后的配置
 
-    - 修改 root 密码
+    - 设置 root 密码
 
     - 新建用户并设置密码
 
@@ -294,8 +321,10 @@
 
       - OpenRC
 
+        */etc/conf.d/hostname*
+
         ```bash
-        echo <name> > /etc/conf.d/hostname
+        hostname=<name>
         ```
 
       - systemd
@@ -303,8 +332,18 @@
         ```
         hostnamectl hostname <name>
         ```
+    - 配置硬件时钟
+  
+      `vi /etc/conf.d/hwclock`
+      ```
+      clock="local"
+      ```
 
-18. 现在可以愉快的重启进入新系统了
+    - 配置密码规则
+  
+      `vi /etc/security/passwdqc.conf`
+
+2.  现在可以愉快的重启进入新系统了
 
 
 
