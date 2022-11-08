@@ -93,9 +93,10 @@
      # EMERGE_DEFAULT_OPTS="--keep-going --with-bdeps=y --autounmask-write=y --jobs=2 -l"
      EMERGE_DEFAULT_OPTS="--jobs=2"
      NO_DE="-wayland -gnome -gnome-shell -gnome-online-accounts -gnome-keyring -nautilus -kde -plasma"
-     OTHERS="X systemd pipewire -grub -ipv6 -bindist cjk emoji"
+     OTHERS="X systemd pipewire grub -ipv6 -bindist cjk emoji"
      USE="${NO_DE} ${OTHERS}"
-     GENTOO_MIRRORS="https://mirrors.ustc.edu.cn/gentoo/"
+     #GENTOO_MIRRORS="https://mirrors.ustc.edu.cn/gentoo/"
+     GENTOO_MIRRORS="https://mirrors.tuna.tsinghua.edu.cn/gentoo"
      ACCEPT_LICENSE="*"
      MAKEOPTS="-j5"
      VIDEO_CARDS="nvidia"
@@ -107,7 +108,20 @@
      LINGUAS="en_US zh_CN en zh"
      ```
 
-   - */etc/portage/repos.conf*
+  
+   - 同步
+      ```bash
+      emerge-webrsync
+      ```
+
+   - 安装 git
+      ```bash
+      emerge -av git
+      ```
+
+   - 配置使用 git 同步软件源
+
+    */etc/portage/repos.conf*
 
      因为默认没有安装 git，所以现在只能使用 rsync 的同步方式。
 
@@ -117,12 +131,20 @@
      
      [gentoo]
      location = /var/db/repos/gentoo
-     sync-type = rsync
-     sync-uri = rsync://rsync.mirrors.ustc.edu.cn/gentoo-portage
+     sync-type = git
+     #sync-uri = rsync://rsync.mirrors.ustc.edu.cn/gentoo-portage
+     #sync-uri = rsync://mirrors.tuna.tsinghua.edu.cn/gentoo-portage
+     sync-uri = https://mirrors.tuna.tsinghua.edu.cn/git/gentoo-portage.git
      auto-sync = yes
+     sync-depth = 1
      ```
 
-11. 更新 Portage
+     ```bash
+     rm -rf /var/db/repos/gentoo
+     emerge --sync
+     ```
+
+10. 更新 Portage
 
    ```bash
    # 推荐使用第一种方式，虽然它使用快照的方式不能保证软件是最新的，但其实差不了多少。
@@ -330,8 +352,9 @@
       - systemd
 
         ```
-        hostnamectl hostname <name>
+        echo "hostname" >> /etc/hostname
         ```
+
     - 配置硬件时钟
   
       `vi /etc/conf.d/hwclock`
@@ -352,3 +375,14 @@
 ### 开机启动失败
 
 使用安装环境 chroot 进去然后使用 `dmesg` 命令查看启动日志。
+
+### 安装软件或更新系统时出现软件冲突
+> 同一软件的不同版本被不同软件依赖，在升级 @world 时，出现很多软件降级的情况
+是 ustc 源的问题，解决办法是更换软件源
+
+### 开机 `ip a` 没有无限网卡，使用 `dmesg | grep wifi` 看到网卡驱动加载失败
+1. 安装最新版本的 `linux-firmware`
+2. 重新配置内核。将无线网卡驱动作为模块编译，而非直接编译进内核。完成之后重新编译并安装内核及其模块。
+
+### 遇到 *ninja: error: manifest ‘build.ninja’ still dirty after 100 tries，perhaps system time is not set*
+这估计是进入新系统之后没调整时间导致的。想到的一个办法是临时调整时间到几天后，当然这可能带来新的问题。
